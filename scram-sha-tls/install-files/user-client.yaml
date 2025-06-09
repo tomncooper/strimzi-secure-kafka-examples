@@ -1,0 +1,22 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: client1
+  labels:
+    strimzi.io/cluster: secure
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: test-topic-1
+          patternType: literal
+        operations:
+          - Create
+          - Describe
+          - Read
+          - Write
+        host: "*"
