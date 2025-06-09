@@ -142,3 +142,17 @@ Press Ctrl+C to exit the producer.
 
 ```shell
 kafka-console-consumer.sh --bootstrap-server <bootstrap-server> --topic test-topic-1 --from-beginning --consumer.config client.properties
+```
+
+## Connecting Clients
+
+### Java Clients
+
+Coming soon...
+
+### Python Clients
+
+For this example we will use the [kafka-python](https://kafka-python.readthedocs.io/en/master/) client library.
+All the code for the python client example is in the `secure-python-client` directory in repository root.
+
+TBC

@@ -20,3 +20,9 @@ spec:
           - Read
           - Write
         host: "*"
+      - resource:
+          type: group
+          name: test-group-1
+          patternType: literal
+        operations:
+          - Read
