@@ -1,12 +1,10 @@
-import argparse
 import json
 import time
 import random
 import string
 
 from kafka import KafkaProducer
-
-from secure_common import load_kafka_config
+from kafka.errors import KafkaError
 
 
 def generate_random_string(length=20):
@@ -14,7 +12,7 @@ def generate_random_string(length=20):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
-def produce_messages(kafka_config, topic, rate=1.0, max_messages=0, message_generator=None):
+def produce_messages(kafka_config, topic, rate=1.0, max_messages=-1, message_generator=None):
     """
     Produce messages to a Kafka topic
 
@@ -22,12 +20,15 @@ def produce_messages(kafka_config, topic, rate=1.0, max_messages=0, message_gene
         kafka_config (dict): Kafka configuration dictionary
         topic (str): Topic to produce to
         rate (float): Messages per second (0 for no rate limiting)
-        max_messages (int): Maximum number of messages to produce, 0 for unlimited
+        max_messages (int): Maximum number of messages to produce, -1 for unlimited
         message_generator (callable, optional): Function to generate messages (takes message_count as arg)
 
     Returns:
         int: Number of messages produced
     """
+
+    print("#### DEBUG #####")
+    print(kafka_config)
 
     # Create producer
     producer = KafkaProducer(
@@ -54,7 +55,7 @@ def produce_messages(kafka_config, topic, rate=1.0, max_messages=0, message_gene
                 record_metadata = future.get(timeout=10)
                 print(f"Message {message_count} sent to topic '{record_metadata.topic}' "
                       f"partition {record_metadata.partition} offset {record_metadata.offset}")
-            except Exception as e:
+            except KafkaError as e:
                 print(f"Failed to send message {message_count}: {e}")
 
             message_count += 1

@@ -50,11 +50,13 @@ spec:
       superUsers:
         - admin
     listeners:
-      - name: plain
-        port: 9092
+      - name: secureint
+        port: 9093
+        tls: true
         type: internal
-        tls: false
-      - name: secure
+        authentication:
+          type: scram-sha-512
+      - name: secureext
         port: 9094
         tls: true
         type: nodeport

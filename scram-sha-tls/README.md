@@ -9,7 +9,7 @@ kubectl -n kafka apply -f install-files
 ```
 
 This will create a Kafka cluster with:
-- A internal listener on port 9092 with no TLS or authentication. This is for debugging and internal communication.
+- An internal listener on port 9093 with TLS encryption and SCRAM-SHA-512 authentication.
 - An external NodePort listener on port 9094 with TLS encryption and SCRAM-SHA-512 authentication.
 - A Kafka topic named `test-topic-1`.
 - A Kafka topic named `test-topic-2`.
@@ -28,7 +28,7 @@ First, we need to expose the bootstrap service to access the Kafka cluster from 
 With minikube we can do this by running the following command:
 
 ```shell
-minikube service -n kafka secure-kafka-secure-bootstrap --url
+minikube service -n kafka secure-kafka-secureext-bootstrap --url
 ```
 This will setup a tunnel to the bootstrap service and return a URL that we can use to connect to the Kafka cluster. 
 The URL will contain `http://` but this can be ignored. 
@@ -170,7 +170,6 @@ ssl_check_hostname=false
 security_protocol=SASL_SSL
 sasl_mechanism=SCRAM-SHA-512
 sasl_plain_username=client1
-sasl_plain_password=<password for client1>
 
 [producer]
 acks=all
@@ -184,24 +183,27 @@ client_id=test-client-consumer-1
 topic=test-topic-1
 ```
 
-You can find the sasl password from the jaas config you created earlier for the `client1` user or by running the following command:
-
-```shell
-kubectl -n kafka get secret client1 -o jsonpath='{.data.password}' | base64
-```
 
 You can then run the producer application using the following command.
 Here we are mounting the `config.ini` file you created above and the CA certificate into the container so that the application can access them. 
 This command assumes that both files are in the current directory:
 
 ```bash
-podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt/app/ca.crt:z secure-python-kafka-client:latest producer --config config.ini
+podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt/app/ca.crt:z secure-python-kafka-client:latest producer --config config.ini --sasl_password=<sasl-password>
 ```
+
+You can find the sasl password from the jaas config you created earlier for the `client1` user or by running the following command:
+
+```shell
+kubectl -n kafka get secret client1 -o jsonpath='{.data.password}' | base64 -d
+```
+Make sure you exclude the `%` character at the end of the password when you pass it to the command above.
 
 In another terminal, you can run the consumer application using the following command:
 
 ```bash
-podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt/app/ca.crt:z secure-python-kafka-client:latest consumer --config config.ini
+podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt/app/ca.crt:z secure-python-kafka-client:latest consumer --config config.ini --sasl_password=<sasl-password>
 ```
 
 You should see the producer sending messages to the `test-topic-1` topic and the consumer receiving them and printing them to the console.
+Note that there may be a slight delay before output appears in the consumer console (depending on your docker/podman setup).

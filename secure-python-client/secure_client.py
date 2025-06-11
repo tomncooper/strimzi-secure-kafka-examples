@@ -10,7 +10,9 @@ from secure_common import (
     load_kafka_config,
     get_topic_from_config,
     get_producer_settings_from_config,
-    get_consumer_settings_from_config
+    get_consumer_settings_from_config,
+    get_password_from_args_or_env,
+    KAFKA_SASL_PWD_ENV_VAR
 )
 from secure_producer import produce_messages, _default_message_generator
 from secure_consumer import consume_messages
@@ -33,6 +35,10 @@ def create_producer_parser(subparsers):
         type=int,
         help='Maximum number of messages to produce (overrides config file)'
     )
+    producer_parser.add_argument(
+        '--sasl_password',
+        help=f'SASL password (overrides {KAFKA_SASL_PWD_ENV_VAR} environment variable)'
+    )
     return producer_parser
 
 
@@ -54,14 +60,25 @@ def create_consumer_parser(subparsers):
         type=int,
         help='Maximum number of messages to consume (overrides config file)'
     )
+    consumer_parser.add_argument(
+        '--sasl_password',
+        help=f'SASL password (overrides {KAFKA_SASL_PWD_ENV_VAR} environment variable)'
+    )
     return consumer_parser
 
 
 def run_producer(args):
     """Run the producer with given arguments"""
     try:
+        # Get password from args or environment
+        sasl_password = get_password_from_args_or_env(args.sasl_password)
+
         # Load Kafka configuration with producer-specific settings
-        kafka_config = load_kafka_config(args.config, client_type='producer')
+        kafka_config = load_kafka_config(
+            args.config,
+            client_type='producer',
+            sasl_password=sasl_password
+        )
 
         # Get topic from config or command line
         topic = get_topic_from_config(args.config, args.topic)
@@ -77,7 +94,11 @@ def run_producer(args):
         if producer_settings['max_messages']:
             print(f"Max messages: {producer_settings['max_messages']}")
         print("Using configuration:\n")
-        pprint(kafka_config)
+        # Create a copy of config without password for display
+        display_config = kafka_config.copy()
+        if 'sasl_plain_password' in display_config:
+            display_config['sasl_plain_password'] = '***REDACTED***'
+        pprint(display_config)
         print(f"\nProducer settings: {producer_settings}")
         print("\nPress Ctrl+C to stop...")
 
@@ -104,8 +125,15 @@ def run_producer(args):
 def run_consumer(args):
     """Run the consumer with given arguments"""
     try:
+        # Get password from args or environment
+        password = get_password_from_args_or_env(args.sasl_password)
+
         # Load Kafka configuration with consumer-specific settings
-        kafka_config = load_kafka_config(args.config, client_type='consumer')
+        kafka_config = load_kafka_config(
+            args.config,
+            client_type='consumer',
+            sasl_password=password
+        )
 
         # Get topic from config or command line
         topic = get_topic_from_config(args.config, args.topic)
@@ -124,7 +152,11 @@ def run_consumer(args):
         if consumer_settings['max_messages']:
             print(f"Max messages: {consumer_settings['max_messages']}")
         print("Using configuration:\n")
-        pprint(kafka_config)
+        # Create a copy of config without password for display
+        display_config = kafka_config.copy()
+        if 'sasl_plain_password' in display_config:
+            display_config['sasl_plain_password'] = '***REDACTED***'
+        pprint(display_config)
         print(f"\nConsumer settings: {consumer_settings}")
         print("\nPress Ctrl+C to stop...")
         print("-" * 80)
@@ -149,14 +181,6 @@ def main():
     """Main entry point with subcommand parsing"""
     parser = argparse.ArgumentParser(
         description='Secure Kafka Client - Producer and Consumer',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s producer --config kafka.properties
-  %(prog)s producer --config kafka.properties --topic my-topic --rate 2.0
-  %(prog)s consumer --config kafka.properties --from-beginning
-  %(prog)s consumer --config kafka.properties --topic my-topic --group-id my-group --max-messages 10
-        """
     )
 
     # Create subparsers

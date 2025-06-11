@@ -9,7 +9,7 @@ def consume_messages(
         topic,
         group_id=None,
         from_beginning=False,
-        max_messages=None,
+        max_messages=-1,
         message_callback=None
 ):
     """
@@ -20,7 +20,7 @@ def consume_messages(
         topic (str): Topic to consume from
         group_id (str, optional): Consumer group ID
         from_beginning (bool): Whether to read from beginning of topic
-        max_messages (int, optional): Maximum number of messages to consume
+        max_messages (int): Maximum number of messages to consume, -1 for unlimited
         message_callback (callable, optional): Function to call for each message
 
     Returns:
@@ -58,7 +58,7 @@ def consume_messages(
                 _default_message_handler(message, message_count)
 
             # Check if we've reached the maximum number of messages
-            if max_messages and message_count >= max_messages:
+            if max_messages > 0 and message_count >= max_messages:
                 break
 
     except KeyboardInterrupt:
