@@ -18,9 +18,6 @@ COPY secure_producer.py .
 COPY secure_consumer.py .
 COPY secure_common.py .
 
-# Create a directory for config files
-RUN mkdir -p /opt/app/config
-
 # Set default entrypoint to use the unified client
 ENTRYPOINT ["python3", "secure_client.py"]
 

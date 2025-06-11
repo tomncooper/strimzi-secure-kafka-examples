@@ -140,8 +140,11 @@ kafka-console-producer.sh --bootstrap-server <bootstrap-server> --topic test-top
 Type some messages into the console and press Enter after each to send them.
 Press Ctrl+C to exit the producer.  
 
+You can then consume those messages using the following command. 
+Note that we have to supply the consumer group ID here because, as we defined in the ACLs of the corresponding `KafkaUser` CR in the `install-files` directory, `client1` is only allowed to be part of that of consumer group `test-group-1` (the `admin` user is a super user and can be part of any group):
+
 ```shell
-kafka-console-consumer.sh --bootstrap-server <bootstrap-server> --topic test-topic-1 --from-beginning --consumer.config client.properties
+kafka-console-consumer.sh --bootstrap-server <bootstrap-server> --group test-group-1 --topic test-topic-1 --from-beginning --consumer.config client.properties
 ```
 
 ## Connecting Clients
@@ -155,4 +158,50 @@ Coming soon...
 For this example we will use the [kafka-python](https://kafka-python.readthedocs.io/en/master/) client library.
 All the code for the python client example is in the `secure-python-client` directory in repository root.
 
-TBC
+Assuming you have built the container image as described in the `secure-python-client/README.md`, you can run the producer and consumer applications in a containerized environment using Podman or Docker.
+
+First create a configuration file named `config.ini` with the following content:
+
+```ini
+[kafka]
+bootstrap_servers=<bootstrap-server>
+ssl_cafile=ca.crt
+ssl_check_hostname=false
+security_protocol=SASL_SSL
+sasl_mechanism=SCRAM-SHA-512
+sasl_plain_username=client1
+sasl_plain_password=<password for client1>
+
+[producer]
+acks=all
+client_id=test-client-producer-1
+
+[consumer]
+group_id=test-group-1
+client_id=test-client-consumer-1
+
+[application]
+topic=test-topic-1
+```
+
+You can find the sasl password from the jaas config you created earlier for the `client1` user or by running the following command:
+
+```shell
+kubectl -n kafka get secret client1 -o jsonpath='{.data.password}' | base64
+```
+
+You can then run the producer application using the following command.
+Here we are mounting the `config.ini` file you created above and the CA certificate into the container so that the application can access them. 
+This command assumes that both files are in the current directory:
+
+```bash
+podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt/app/ca.crt:z secure-python-kafka-client:latest producer --config config.ini
+```
+
+In another terminal, you can run the consumer application using the following command:
+
+```bash
+podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt/app/ca.crt:z secure-python-kafka-client:latest consumer --config config.ini
+```
+
+You should see the producer sending messages to the `test-topic-1` topic and the consumer receiving them and printing them to the console.

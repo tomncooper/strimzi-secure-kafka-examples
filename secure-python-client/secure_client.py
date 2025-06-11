@@ -4,7 +4,14 @@ import sys
 
 from pprint import pprint
 
-from secure_common import load_kafka_config
+from kafka.errors import KafkaError
+
+from secure_common import (
+    load_kafka_config,
+    get_topic_from_config,
+    get_producer_settings_from_config,
+    get_consumer_settings_from_config
+)
 from secure_producer import produce_messages, _default_message_generator
 from secure_consumer import consume_messages
 
@@ -13,13 +20,19 @@ def create_producer_parser(subparsers):
     """Create producer subcommand parser"""
     producer_parser = subparsers.add_parser('producer', help='Run Kafka producer')
     producer_parser.add_argument('--config', required=True, help='Path to Kafka properties file')
-    producer_parser.add_argument('--topic', required=True, help='Kafka topic to produce to')
     producer_parser.add_argument(
-        '--rate', type=float, default=1.0, help='Messages per second (default: 1.0)')
+        '--topic',
+        help='Kafka topic to produce to (overrides config file)'
+    )
     producer_parser.add_argument(
-        '--message-size', type=int, default=20, help='Size of random message (default: 20)')
+        '--rate', type=float, help='Messages per second (overrides config file)')
     producer_parser.add_argument(
-        '--max-messages', type=int, help='Maximum number of messages to produce')
+        '--message-size', type=int, help='Size of random message (overrides config file)')
+    producer_parser.add_argument(
+        '--max-messages',
+        type=int,
+        help='Maximum number of messages to produce (overrides config file)'
+    )
     return producer_parser
 
 
@@ -27,10 +40,9 @@ def create_consumer_parser(subparsers):
     """Create consumer subcommand parser"""
     consumer_parser = subparsers.add_parser('consumer', help='Run Kafka consumer')
     consumer_parser.add_argument('--config', required=True, help='Path to Kafka properties file')
-    consumer_parser.add_argument('--topic', required=True, help='Kafka topic to consume from')
     consumer_parser.add_argument(
-        '--group-id',
-        help='Consumer group ID'
+        '--topic',
+        help='Kafka topic to consume from (overrides config file)'
     )
     consumer_parser.add_argument(
         '--from-beginning',
@@ -38,41 +50,53 @@ def create_consumer_parser(subparsers):
         help='Read from beginning of topic'
     )
     consumer_parser.add_argument(
-        '--max-messages', type=int, help='Maximum number of messages to consume')
+        '--max-messages',
+        type=int,
+        help='Maximum number of messages to consume (overrides config file)'
+    )
     return consumer_parser
 
 
 def run_producer(args):
     """Run the producer with given arguments"""
     try:
-        # Load Kafka configuration
-        kafka_config = load_kafka_config(args.config)
+        # Load Kafka configuration with producer-specific settings
+        kafka_config = load_kafka_config(args.config, client_type='producer')
 
-        print(f"Starting producer for topic '{args.topic}' at {args.rate} messages/second")
-        print(f"Message size: {args.message_size} characters")
-        if args.max_messages:
-            print(f"Max messages: {args.max_messages}")
+        # Get topic from config or command line
+        topic = get_topic_from_config(args.config, args.topic)
+
+        # Get producer settings from config with command line overrides
+        producer_settings = get_producer_settings_from_config(args.config, args)
+
+        print(
+            f"Starting producer for topic '{topic}' at " +
+            f"{producer_settings['rate']} messages/second"
+        )
+        print(f"Message size: {producer_settings['message_size']} characters")
+        if producer_settings['max_messages']:
+            print(f"Max messages: {producer_settings['max_messages']}")
         print("Using configuration:\n")
         pprint(kafka_config)
-        print("\n")
-        print("Press Ctrl+C to stop...")
+        print(f"\nProducer settings: {producer_settings}")
+        print("\nPress Ctrl+C to stop...")
 
         # Create message generator with custom size
         def message_generator(count):
-            return _default_message_generator(count, args.message_size)
+            return _default_message_generator(count, producer_settings['message_size'])
 
         # Produce messages
         message_count = produce_messages(
             kafka_config=kafka_config,
-            topic=args.topic,
-            rate=args.rate,
-            max_messages=args.max_messages,
+            topic=topic,
+            rate=producer_settings['rate'],
+            max_messages=producer_settings['max_messages'],
             message_generator=message_generator
         )
 
-        print(f"Produced {message_count} messages to topic '{args.topic}'")
+        print(f"Produced {message_count} messages to topic '{topic}'")
 
-    except Exception as e:
+    except (IOError, ValueError, KeyError, KafkaError) as e:
         print(f"Producer error: {e}")
         sys.exit(1)
 
@@ -80,36 +104,43 @@ def run_producer(args):
 def run_consumer(args):
     """Run the consumer with given arguments"""
     try:
-        # Load Kafka configuration
-        kafka_config = load_kafka_config(args.config)
+        # Load Kafka configuration with consumer-specific settings
+        kafka_config = load_kafka_config(args.config, client_type='consumer')
 
-        print(f"Starting consumer for topic '{args.topic}'")
-        if args.group_id:
-            print(f"Using group ID '{args.group_id}'")
-        print(
-            "Auto offset reset: " +
-            f"{'earliest' if args.from_beginning else kafka_config.get('auto_offset_reset', 'latest')}"
+        # Get topic from config or command line
+        topic = get_topic_from_config(args.config, args.topic)
+
+        # Get consumer settings from config with command line overrides
+        consumer_settings = get_consumer_settings_from_config(args.config, args)
+
+        print(f"Starting consumer for topic '{topic}'")
+        print(f"Using group ID '{kafka_config['group_id']}'")
+        auto_offset = (
+            'earliest'
+            if args.from_beginning
+            else kafka_config.get('auto_offset_reset', 'latest')
         )
-        if args.max_messages:
-            print(f"Max messages: {args.max_messages}")
+        print("Auto offset reset: " + f"{auto_offset}")
+        if consumer_settings['max_messages']:
+            print(f"Max messages: {consumer_settings['max_messages']}")
         print("Using configuration:\n")
         pprint(kafka_config)
-        print("\n")
-        print("Press Ctrl+C to stop...")
+        print(f"\nConsumer settings: {consumer_settings}")
+        print("\nPress Ctrl+C to stop...")
         print("-" * 80)
 
         # Consume messages
         message_count = consume_messages(
             kafka_config=kafka_config,
-            topic=args.topic,
-            group_id=args.group_id,
+            topic=topic,
+            group_id=kafka_config['group_id'],
             from_beginning=args.from_beginning,
-            max_messages=args.max_messages
+            max_messages=consumer_settings['max_messages']
         )
 
         print(f"\nTotal messages consumed: {message_count}")
 
-    except Exception as e:
+    except (IOError, ValueError, KeyError, KafkaError) as e:
         print(f"Consumer error: {e}")
         sys.exit(1)
 
@@ -121,8 +152,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  %(prog)s producer --config kafka.properties
   %(prog)s producer --config kafka.properties --topic my-topic --rate 2.0
-  %(prog)s consumer --config kafka.properties --topic my-topic --from-beginning
+  %(prog)s consumer --config kafka.properties --from-beginning
   %(prog)s consumer --config kafka.properties --topic my-topic --group-id my-group --max-messages 10
         """
     )

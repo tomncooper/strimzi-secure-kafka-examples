@@ -14,7 +14,7 @@ def generate_random_string(length=20):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
-def produce_messages(kafka_config, topic, rate=1.0, max_messages=None, message_generator=None):
+def produce_messages(kafka_config, topic, rate=1.0, max_messages=0, message_generator=None):
     """
     Produce messages to a Kafka topic
 
@@ -22,7 +22,7 @@ def produce_messages(kafka_config, topic, rate=1.0, max_messages=None, message_g
         kafka_config (dict): Kafka configuration dictionary
         topic (str): Topic to produce to
         rate (float): Messages per second (0 for no rate limiting)
-        max_messages (int, optional): Maximum number of messages to produce
+        max_messages (int): Maximum number of messages to produce, 0 for unlimited
         message_generator (callable, optional): Function to generate messages (takes message_count as arg)
 
     Returns:
@@ -60,7 +60,7 @@ def produce_messages(kafka_config, topic, rate=1.0, max_messages=None, message_g
             message_count += 1
 
             # Check if we've reached the maximum number of messages
-            if max_messages and message_count >= max_messages:
+            if max_messages > 0 and message_count >= max_messages:
                 break
 
             # Control rate
