@@ -149,10 +149,6 @@ kafka-console-consumer.sh --bootstrap-server <bootstrap-server> --group test-gro
 
 ## Connecting Clients
 
-### Java Clients
-
-Coming soon...
-
 ### Python Clients
 
 For this example we will use the [kafka-python](https://kafka-python.readthedocs.io/en/master/) client library.
