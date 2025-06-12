@@ -147,9 +147,11 @@ Note that we have to supply the consumer group ID here because, as we defined in
 kafka-console-consumer.sh --bootstrap-server <bootstrap-server> --group test-group-1 --topic test-topic-1 --from-beginning --consumer.config client.properties
 ```
 
-## Connecting Clients
+## Connecting Client Applications
 
-### Python Clients
+### Python Client
+
+#### External to the Kubernetes Cluster
 
 For this example we will use the [kafka-python](https://kafka-python.readthedocs.io/en/master/) client library.
 All the code for the python client example is in the `secure-python-client` directory in repository root.
@@ -179,7 +181,6 @@ client_id=test-client-consumer-1
 topic=test-topic-1
 ```
 
-
 You can then run the producer application using the following command.
 Here we are mounting the `config.ini` file you created above and the CA certificate into the container so that the application can access them. 
 This command assumes that both files are in the current directory:
@@ -193,7 +194,7 @@ You can find the sasl password from the jaas config you created earlier for the 
 ```shell
 kubectl -n kafka get secret client1 -o jsonpath='{.data.password}' | base64 -d
 ```
-Make sure you exclude the `%` character at the end of the password when you pass it to the command above.
+Make sure you exclude the `%` character at the end of the password when you pass it to the `podman run` command above.
 
 In another terminal, you can run the consumer application using the following command:
 
@@ -203,3 +204,127 @@ podman run --rm -v $(pwd)/config.ini:/opt/app/config.ini:z -v $(pwd)/ca.crt:/opt
 
 You should see the producer sending messages to the `test-topic-1` topic and the consumer receiving them and printing them to the console.
 Note that there may be a slight delay before output appears in the consumer console (depending on your docker/podman setup).
+
+#### Deploying into the Kubernetes Cluster
+
+To deploy the example secure python client application into the Kubernetes cluster, we need to create a Kubernetes deployment for the producer and consumer applications.
+
+In order to have the application image available in our local Kubernetes cluster, we need to load the image into the minikube registry. 
+From the `secure-python-client` directory, run the following command:
+
+```bash
+minikube image build . -t secure-python-kafka-client:latest
+```
+
+We then need to create a ConfigMap containing the application configuration. 
+An example configuration file is provided in the `python-client-deployment/clientconfig.yaml` file.
+This configuration sets the bootstrap server to the internal `secureint` listener (rather than the external `secureext` NodePort listener) and so uses the internal DNS address of the Kafka cluster's bootstrap service.
+You can find out what the bootstrap address for the `secureint` listener is by running the following command (it should match the value already in the `clientconfig.yaml` file):
+
+```bash
+kubectl -n kafka get kafka secure -o jsonpath='{.status.listeners[?(@.name=="secureint")].bootstrapServers}'
+```
+
+Now we have the configuration available in the Kubernetes cluster, we can create a Deployment for the secure producer and consumer applications.
+An example producer Deployment is provided in the `python-client-deployment/secure-producer.yaml` file.
+We can make the application's configuration available to the program running inside our Deployment's Pods by mounting the configuration ConfigMap as a volume. 
+This will make the contents of every key in the ConfigMap available as a file (named the same as the key) in the specified mount path.
+Similarly, we can provide the SASL password for the `client1` user by loading it from the `KafkaUser`'s Secret, which Strimzi created, into an environment variable (`SASL_PASSWORD`) which the application can read at start up.
+Finally, we need to provide the Kafka cluster's CA certificate to the application. 
+The `kafka-python` library expects the CA certificate as a file. 
+To provide this we need to mount the CA certificate Secret as a volume in the Pod.
+The Kafka cluster's CA certificate Secret has a `ca.crt` key, so a file with that name will be created in the specified mount path and we can set the path in the configuration ConfigMap.
+An example of the container template from the producer deployment file is shown below:
+
+```yaml
+      containers:
+      - name: kafka-producer
+        image: secure-python-kafka-client:latest
+        imagePullPolicy: Never
+        env:
+        - name: SASL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: client1
+              key: password
+        args: ["producer", "--config", "/opt/app/config/config.ini"]
+        volumeMounts:
+        - name: config-volume
+          mountPath: /opt/app/config
+          readOnly: true
+        - name: ca-cert-volume
+          mountPath: /opt/app/certs
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: kafka-client-config
+      - name: ca-cert-volume
+        secret:
+          secretName: secure-cluster-ca-cert
+```
+
+You can then create the deployment by running the following command:
+
+```bash
+kubectl -n kafka apply -f python-client-deployment/secure-producer.yaml
+```
+
+If you still have the client configuration, ca.crt and truststore files from the connection testing section above, you can check the producer is working by running the following command:
+
+```bash
+kafka-console-consumer.sh --bootstrap-server <nodeport-bootstrap-server> --group test-group-1 --topic test-topic-1 --consumer.config client.properties
+```
+
+If everything is working correctly, you should see the messages produced by the secure producer application being printed to the console:
+
+```
+{"id": 379, "timestamp": 1749732779.9564247, "data": "w4KNlklPdpME1RuUrYqn"}
+{"id": 380, "timestamp": 1749732780.9620478, "data": "fikXJFn0OceO265S8PyO"}
+{"id": 381, "timestamp": 1749732781.9671235, "data": "XjpXwysIgSc8THq6FG66"}
+{"id": 382, "timestamp": 1749732782.972482, "data": "fhmob7UoYm0P1ZYRBL9F"}
+{"id": 383, "timestamp": 1749732783.9770987, "data": "LyQHcxLG8Di0WcYjGliz"}
+{"id": 384, "timestamp": 1749732784.9811716, "data": "u6kgsXaUCI7EfuJst3WV"}
+{"id": 385, "timestamp": 1749732785.9873838, "data": "6WorNIazgoMY62pbhOci"}
+{"id": 386, "timestamp": 1749732786.9917312, "data": "TpUkMx3J21hEseUiD0kv"}
+```
+
+Finally, you can deploy the consumer application in the same way as the producer by running the following command:
+
+```bash
+kubectl -n kafka apply -f python-client-deployment/secure-consumer.yaml
+```
+
+You can then check the consumer is working by checking the logs of the consumer pod:
+
+```bash
+kubectl -n kafka logs -f deployment/secure-python-kafka-consumer
+```
+
+You should see the formatted messages from the python consumer being printed to the console: 
+
+```
+Message 1972:
+  Topic: test-topic-1
+  Partition: 2
+  Offset: 779
+  Timestamp: 1749734767952
+  Key: None
+  Value: {'id': 2358, 'timestamp': 1749734767.9520195, 'data': 'NiYFx08VTD1LuIR3BDdU'}
+----------------------------------------
+Message 1973:
+  Topic: test-topic-1
+  Partition: 2
+  Offset: 780
+  Timestamp: 1749734768955
+  Key: None
+  Value: {'id': 2359, 'timestamp': 1749734768.9550757, 'data': 'zMa8fDs81JBVOxEqG7X3'}
+----------------------------------------
+Message 1974:
+  Topic: test-topic-1
+  Partition: 1
+  Offset: 763
+  Timestamp: 1749734769958
+  Key: None
+  Value: {'id': 2360, 'timestamp': 1749734769.9581563, 'data': 'kEQRQ4q8lqbMOAFsDEjI'}
+```

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: 
+  labels:
+    app: secure-python-kafka-producer
+  name: secure-python-kafka-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secure-python-kafka-producer
+  template:
+    metadata:
+      labels:
+        app: secure-python-kafka-producer
+    spec:
+      containers:
+      - name: kafka-producer
+        image: secure-python-kafka-client:latest
+        imagePullPolicy: Never
+        env:
+        - name: SASL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: client1
+              key: password
+        args: ["producer", "--config", "/opt/app/config/config.ini"]
+        volumeMounts:
+        - name: config-volume
+          mountPath: /opt/app/config
+          readOnly: true
+        - name: ca-cert-volume
+          mountPath: /opt/app/certs
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: kafka-client-config
+      - name: ca-cert-volume
+        secret:
+          secretName: secure-cluster-ca-cert
+        

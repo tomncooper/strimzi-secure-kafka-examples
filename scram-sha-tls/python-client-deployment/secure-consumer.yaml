@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: 
+  labels:
+    app: secure-python-kafka-consumer
+  name: secure-python-kafka-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secure-python-kafka-consumer
+  template:
+    metadata:
+      labels:
+        app: secure-python-kafka-consumer
+    spec:
+      containers:
+      - name: kafka-consumer
+        image: secure-python-kafka-client:latest
+        imagePullPolicy: Never
+        env:
+        - name: SASL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: client1
+              key: password
+        args: ["consumer", "--config", "/opt/app/config/config.ini"]
+        volumeMounts:
+        - name: config-volume
+          mountPath: /opt/app/config
+          readOnly: true
+        - name: ca-cert-volume
+          mountPath: /opt/app/certs
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: kafka-client-config
+      - name: ca-cert-volume
+        secret:
+          secretName: secure-cluster-ca-cert
+        

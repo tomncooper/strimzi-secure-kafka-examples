@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-client-config
+data:
+  config.ini: |
+    [kafka]
+    bootstrap_servers=secure-kafka-bootstrap.kafka.svc:9093
+    ssl_cafile=/opt/app/certs/ca.crt
+    ssl_check_hostname=false
+    security_protocol=SASL_SSL
+    sasl_mechanism=SCRAM-SHA-512
+    sasl_plain_username=client1
+
+    [producer]
+    acks=all
+    client_id=test-client-producer-1
+
+    [consumer]
+    client_id=test-client-consumer-1
+    group_id=test-group-1
+
+    [application]
+    topic=test-topic-1
+    rate=1
